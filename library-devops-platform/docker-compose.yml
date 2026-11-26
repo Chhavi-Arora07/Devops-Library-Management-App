@@ -1,0 +1,24 @@
+# Local development only. Copy .env.example to .env first.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: library
+      POSTGRES_DB: library
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD, pg_isready, -U, library]
+      interval: 5s
+      retries: 10
+  app:
+    build: .
+    command: sh -c "python -m app.db && exec gunicorn -c gunicorn.conf.py wsgi:app"
+    environment:
+      DATABASE_URL: postgresql://library:${POSTGRES_PASSWORD}@db:5432/library
+      API_KEY: ${API_KEY:?set it in .env}
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+volumes:
+  pgdata:

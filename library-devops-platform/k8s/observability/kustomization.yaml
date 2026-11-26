@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - stack.yaml
+# No top-level namespace: the RBAC objects must stay in "library".
+configMapGenerator:
+  - {name: prometheus, namespace: observability, files: [config/prometheus.yml, config/alerts.yml]}
+  - {name: loki, namespace: observability, files: [config/loki.yml]}
+  - {name: alloy, namespace: observability, files: [config/config.alloy]}
+  - {name: grafana-datasources, namespace: observability, files: [config/datasources.yml]}
+  - {name: grafana-providers, namespace: observability, files: [config/dashboards.yml]}
+  - {name: grafana-dashboards, namespace: observability, files: [config/library.json]}

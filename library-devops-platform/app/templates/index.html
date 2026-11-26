@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library Management</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Library Management</h1>
+
+  <section>
+    <h2>Catalogue</h2>
+    <input id="search" type="search" placeholder="Search title or author">
+    <table>
+      <thead><tr><th>ID</th><th>Title</th><th>Author</th><th>ISBN</th><th>Available</th></tr></thead>
+      <tbody id="books"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Librarian desk</h2>
+    <label>API key <input id="key" type="password" autocomplete="off"></label>
+    <form data-url="/api/books">
+      <h3>Add book</h3>
+      <input name="isbn" placeholder="ISBN" required>
+      <input name="title" placeholder="Title" required>
+      <input name="author" placeholder="Author" required>
+      <input name="copies" type="number" min="1" placeholder="Copies" required>
+      <button>Add</button>
+    </form>
+    <form data-url="/api/members">
+      <h3>Add member</h3>
+      <input name="name" placeholder="Name" required>
+      <input name="email" type="email" placeholder="Email" required>
+      <button>Add</button>
+    </form>
+    <form data-url="/api/loans">
+      <h3>Lend book</h3>
+      <input name="book_id" type="number" min="1" placeholder="Book ID" required>
+      <input name="member_id" type="number" min="1" placeholder="Member ID" required>
+      <button>Lend</button>
+    </form>
+    <form id="return">
+      <h3>Return book</h3>
+      <input name="loan_id" type="number" min="1" placeholder="Loan ID" required>
+      <button>Return</button>
+    </form>
+    <p id="message" role="status"></p>
+  </section>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

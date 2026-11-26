@@ -1,0 +1,4 @@
+body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+table { border-collapse: collapse; width: 100%; margin-top: .5rem; }
+th, td { border-bottom: 1px solid #ddd; text-align: left; padding: .4rem; }
+input, button { font: inherit; padding: .3rem .5rem; margin: .15rem; }

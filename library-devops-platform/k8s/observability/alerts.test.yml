@@ -1,0 +1,34 @@
+# Run with: promtool test rules k8s/observability/alerts.test.yml
+rule_files: [config/alerts.yml]
+evaluation_interval: 1m
+tests:
+  - name: errors and missing pods raise alerts
+    interval: 1m
+    input_series:
+      - series: 'up{job="library"}'
+        values: '0x15'
+      - series: 'http_requests_total{job="library",status="500"}'
+        values: '0+10x15'
+      - series: 'http_requests_total{job="library",status="200"}'
+        values: '0+90x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LibraryDown
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: No healthy library pod is being scraped}
+      - eval_time: 10m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations: {summary: More than 5% of requests are failing}
+  - name: a healthy system is quiet
+    interval: 1m
+    input_series:
+      - series: 'up{job="library"}'
+        values: '1x15'
+      - series: 'http_requests_total{job="library",status="200"}'
+        values: '0+90x15'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: LibraryDown, exp_alerts: []}
+      - {eval_time: 10m, alertname: HighErrorRate, exp_alerts: []}
