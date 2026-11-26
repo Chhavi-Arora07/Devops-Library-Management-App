@@ -1,0 +1,33 @@
+# Manual rollback: redeploy any previously published image (use its commit SHA).
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA of the version to restore
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: production
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure cluster access
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          printf '%s' "$KUBE_CONFIG" > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - name: Redeploy
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "expected a full commit SHA"; exit 1; }
+          ./scripts/deploy.sh production "ghcr.io/${GITHUB_REPOSITORY,,}:$SHA"

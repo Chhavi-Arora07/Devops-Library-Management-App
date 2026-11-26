@@ -1,0 +1,160 @@
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: library
+          POSTGRES_PASSWORD: library
+          POSTGRES_DB: library_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U library" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.13", cache: pip}
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest --cov=app --cov-fail-under=85
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v6
+        with: {python-version: "3.13"}
+      - run: pip install bandit==1.9.4 pip-audit==2.10.1
+      - name: Static analysis
+        run: bandit -q -r app
+      - name: Dependency vulnerabilities
+        run: pip-audit -r requirements.txt
+      - name: Secret scan (full history)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 git /repo --redact
+      - name: Infrastructure misconfiguration scan
+        run: |
+          pipx run checkov==3.4.11 --quiet --compact \
+            --framework dockerfile kubernetes terraform github_actions -d .
+
+  build:
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          tags: library-app:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          outputs: type=docker,dest=/tmp/image.tar
+      - run: docker load -i /tmp/image.tar
+      - name: Image vulnerability scan
+        # Pinned to a commit: tags of this action were hijacked in March 2026.
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: library-app:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: actions/upload-artifact@v7
+        with: {name: image, path: /tmp/image.tar, retention-days: 3}
+
+  e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with: {name: image, path: /tmp}
+      - uses: hashicorp/setup-terraform@v4
+        with: {terraform_wrapper: false}
+      - name: Create cluster and platform
+        run: |
+          make up
+      - name: Load the image that was scanned
+        run: |
+          docker load -i /tmp/image.tar
+          kind load docker-image "library-app:$GITHUB_SHA" --name library
+      - name: Deploy
+        run: ./scripts/deploy.sh staging "library-app:$GITHUB_SHA"
+      - run: ./scripts/smoke-test.sh
+      - name: Rollback drill
+        run: ./scripts/drill-rollback.sh
+      - name: Backup and restore drill
+        run: ./scripts/drill-restore.sh
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n library describe rollout library
+          kubectl -n library logs -l app=library --all-containers --tail=100
+
+  publish:
+    needs: e2e
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with: {name: image, path: /tmp}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        name: Push the tested image
+        run: |
+          docker load -i /tmp/image.tar
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker tag "library-app:$GITHUB_SHA" "$repo:$GITHUB_SHA"
+          docker push "$repo:$GITHUB_SHA"
+          echo "image=$(docker inspect --format '{{index .RepoDigests 0}}' "$repo:$GITHUB_SHA")" \
+            >> "$GITHUB_OUTPUT"
+
+  deploy-production:
+    needs: publish
+    # Set the repository variable DEPLOY_PRODUCTION=true once a cluster is ready.
+    if: vars.DEPLOY_PRODUCTION == 'true'
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers for a manual approval gate
+    concurrency: production
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure cluster access
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          printf '%s' "$KUBE_CONFIG" > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - name: Canary release
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+        run: ./scripts/deploy.sh production "$IMAGE"
+      - name: Smoke test
+        run: |
+          kubectl -n library port-forward service/library 8080:80 >/dev/null &
+          ./scripts/smoke-test.sh http://localhost:8080

@@ -1,0 +1,10 @@
+# Accepted findings, each with its reason.
+skip-check:
+  - CKV_K8S_21   # namespace is assigned by kustomize, not written in each base file
+  - CKV_K8S_43   # images are pinned by version tag; Dependabot proposes updates
+  - CKV_K8S_15   # tags are immutable per release, so "Always" is not needed
+  - CKV_K8S_35   # secrets as env vars: the application reads configuration from env
+  - CKV_K8S_38   # Prometheus and Alloy need a token for pod discovery (read-only RBAC)
+  - CKV_K8S_40   # official images use their own non-root UIDs
+  - CKV_K8S_22   # Grafana writes to its own filesystem
+  - CKV_GHA_7    # the rollback input is required and validated as a commit SHA
