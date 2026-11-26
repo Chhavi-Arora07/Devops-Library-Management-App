@@ -27,7 +27,7 @@ jobs:
           --health-cmd "pg_isready -U library" --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with: {python-version: "3.13", cache: pip}
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: {fetch-depth: 0}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with: {python-version: "3.13"}
       - run: pip install bandit==1.9.4 pip-audit==2.10.1
       - name: Static analysis
